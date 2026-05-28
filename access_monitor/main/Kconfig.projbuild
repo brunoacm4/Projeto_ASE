@@ -1,0 +1,16 @@
+menu "Access Monitor Configuration"
+
+    config PROJECT_ENABLE_MQTT
+        bool "Enable MQTT publishing"
+        default n
+
+    config PROJECT_BROKER_URL
+        string "MQTT broker URL"
+        default "mqtts://broker.hivemq.com:8883"
+        depends on PROJECT_ENABLE_MQTT
+
+    config PROJECT_PIR_ACTIVE_HIGH
+        bool "PIR output is active-high"
+        default y
+
+endmenu

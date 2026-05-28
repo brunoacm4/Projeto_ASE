@@ -1,0 +1,27 @@
+idf_component_register(
+    SRCS
+        "main.c"
+        "access_control.c"
+        "display_ui.c"
+        "mqtt_app.c"
+        "multisensor_dht20.c"
+        "pir.c"
+        "rfid.c"
+        "spi_bus_manager.c"
+        "storage_log.c"
+    INCLUDE_DIRS "."
+    REQUIRES
+        driver
+        esp_driver_gpio
+        esp_driver_i2c
+        esp_driver_spi
+        esp_timer
+        esp_event
+        esp_netif
+        esp-tls
+        fatfs
+        mqtt
+        nvs_flash
+        sdmmc
+        st7735_driver
+)

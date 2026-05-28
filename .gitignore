@@ -1,0 +1,11 @@
+# ESP-IDF build outputs
+**/build/
+**/build_*/
+**/.idf_component_manager/
+**/managed_components/
+**/sdkconfig.old
+
+# Lab guides: keep only extracted text files
+/ASE_pdfs/*
+!/ASE_pdfs/
+!/ASE_pdfs/*.txt
