@@ -5,6 +5,7 @@
 
 #include "access_control.h"
 #include "display_ui.h"
+#include "door_led.h"
 #include "driver/i2c_master.h"
 #include "esp_err.h"
 #include "esp_log.h"
@@ -15,6 +16,7 @@
 #include "mqtt_app.h"
 #include "multisensor_dht20.h"
 #include "pir.h"
+#include "presence.h"
 #include "project_config.h"
 #include "rfid.h"
 #include "storage_log.h"
@@ -43,6 +45,11 @@ static const char *wake_reason_name(esp_sleep_wakeup_cause_t reason)
     default:
         return "boot";
     }
+}
+
+static int64_t now_millis(void)
+{
+    return esp_timer_get_time() / 1000;
 }
 
 static env_sample_t read_environment(void)
@@ -86,29 +93,50 @@ static env_sample_t read_environment(void)
 
 static void publish_env_event(const char *event, const env_sample_t *sample)
 {
-    char payload[160];
+    char payload[224];
     snprintf(payload,
              sizeof(payload),
-             "{\"event\":\"%s\",\"temp\":%.2f,\"hum\":%.2f,\"blocked\":%d}",
+             "{\"event\":\"%s\",\"card_id\":\"\",\"direction\":\"\",\"occupancy\":%u,\"temp\":%.2f,\"hum\":%.2f,\"blocked\":%d,\"millis\":%lld}",
              event,
+             (unsigned)presence_count(),
              sample->temperature,
              sample->humidity,
-             sample->blocked ? 1 : 0);
+             sample->blocked ? 1 : 0,
+             now_millis());
     mqtt_app_publish(sample->blocked ? "ase/access/alerts" : "ase/access/env", payload, 0, 0);
 }
 
-static void publish_access_event(const char *uid, const char *result, const env_sample_t *sample)
+static void publish_access_event(const char *event,
+                                 const char *uid,
+                                 const char *direction,
+                                 const char *result,
+                                 const env_sample_t *sample)
 {
-    char payload[192];
+    char payload[256];
     snprintf(payload,
              sizeof(payload),
-             "{\"event\":\"rfid_auth\",\"uid\":\"%s\",\"result\":\"%s\",\"temp\":%.2f,\"hum\":%.2f,\"blocked\":%d}",
+             "{\"event\":\"%s\",\"card_id\":\"%s\",\"direction\":\"%s\",\"result\":\"%s\",\"occupancy\":%u,\"temp\":%.2f,\"hum\":%.2f,\"blocked\":%d,\"millis\":%lld}",
+             event,
              uid,
+             direction ? direction : "",
              result,
+             (unsigned)presence_count(),
              sample->temperature,
              sample->humidity,
-             sample->blocked ? 1 : 0);
+             sample->blocked ? 1 : 0,
+             now_millis());
     mqtt_app_publish("ase/access/events", payload, 0, 0);
+}
+
+static void publish_presence_event(void)
+{
+    char payload[96];
+    snprintf(payload,
+             sizeof(payload),
+             "{\"event\":\"presence\",\"occupancy\":%u,\"millis\":%lld}",
+             (unsigned)presence_count(),
+             now_millis());
+    mqtt_app_publish("ase/access/presence", payload, 0, 0);
 }
 
 static void log_env_event(const char *wakeup, const char *event, const env_sample_t *sample, const char *result)
@@ -124,8 +152,64 @@ static void log_env_event(const char *wakeup, const char *event, const env_sampl
     }
 }
 
+static void log_access_event(const char *event, const char *card_id, const char *result, const env_sample_t *sample)
+{
+    if (storage_log_mount() == ESP_OK) {
+        storage_log_append_access(event,
+                                  card_id,
+                                  result,
+                                  sample->temperature,
+                                  sample->humidity,
+                                  sample->blocked || s_access_blocked);
+        storage_log_write_presence_snapshot();
+    }
+}
+
+static void display_env_with_presence(const env_sample_t *sample)
+{
+    size_t count = presence_count();
+    display_ui_show_env(sample->temperature, sample->humidity, sample->blocked, count);
+    vTaskDelay(pdMS_TO_TICKS(PROJECT_ENV_DISPLAY_MS));
+
+    if (count > 0) {
+        presence_entry_t entries[PROJECT_MAX_PRESENT_CARDS];
+        size_t total = presence_snapshot(entries, PROJECT_MAX_PRESENT_CARDS);
+        const char *ids[PROJECT_MAX_PRESENT_CARDS];
+        size_t shown = total < PROJECT_MAX_PRESENT_CARDS ? total : PROJECT_MAX_PRESENT_CARDS;
+        for (size_t i = 0; i < shown; i++) {
+            ids[i] = entries[i].card_id;
+        }
+        display_ui_show_presence(total, ids, shown);
+        vTaskDelay(pdMS_TO_TICKS(PROJECT_ENV_DISPLAY_MS));
+    }
+}
+
+static void evacuate_present_cards(const env_sample_t *sample)
+{
+    presence_entry_t entries[PROJECT_MAX_PRESENT_CARDS];
+    size_t count = presence_snapshot(entries, PROJECT_MAX_PRESENT_CARDS);
+    if (count == 0) {
+        if (storage_log_mount() == ESP_OK) {
+            storage_log_write_presence_snapshot();
+        }
+        publish_presence_event();
+        return;
+    }
+
+    for (size_t i = 0; i < count && i < PROJECT_MAX_PRESENT_CARDS; i++) {
+        log_access_event("evacuated", entries[i].card_id, "evacuated", sample);
+        publish_access_event("evacuated", entries[i].card_id, "evacuated", "evacuated", sample);
+    }
+    presence_clear();
+    if (storage_log_mount() == ESP_OK) {
+        storage_log_write_presence_snapshot();
+    }
+    publish_presence_event();
+}
+
 static void enter_deep_sleep(void)
 {
+    door_led_off();
     storage_log_unmount();
     display_ui_power_down();
 
@@ -140,6 +224,7 @@ static void enter_deep_sleep(void)
 static void handle_timer_wakeup(const char *wakeup)
 {
     env_sample_t sample = read_environment();
+    storage_log_mount();
     if (!sample.valid) {
         if (display_ui_init() == ESP_OK) {
             display_ui_show_sensor_error();
@@ -147,6 +232,8 @@ static void handle_timer_wakeup(const char *wakeup)
             display_ui_power_down();
         }
         log_env_event(wakeup, "env_error", &sample, "sensor_error");
+        mqtt_app_start_once();
+        publish_env_event("env_error", &sample);
         return;
     }
 
@@ -155,8 +242,7 @@ static void handle_timer_wakeup(const char *wakeup)
             display_ui_show_alert(sample.temperature, sample.humidity);
             vTaskDelay(pdMS_TO_TICKS(PROJECT_ALERT_DISPLAY_MS));
         } else {
-            display_ui_show_env(sample.temperature, sample.humidity, false);
-            vTaskDelay(pdMS_TO_TICKS(PROJECT_ENV_DISPLAY_MS));
+            display_env_with_presence(&sample);
         }
         display_ui_power_down();
     }
@@ -164,6 +250,9 @@ static void handle_timer_wakeup(const char *wakeup)
     mqtt_app_start_once();
     log_env_event(wakeup, sample.blocked ? "env_alert" : "env_sample", &sample, sample.blocked ? "blocked" : "ok");
     publish_env_event(sample.blocked ? "env_alert" : "env_sample", &sample);
+    if (sample.blocked) {
+        evacuate_present_cards(&sample);
+    }
 }
 
 static void handle_pir_wakeup(const char *wakeup)
@@ -180,9 +269,11 @@ static void handle_pir_wakeup(const char *wakeup)
     if (!sample.valid) {
         display_ui_show_sensor_error();
         storage_log_append(wakeup, "env_error", sample.temperature, sample.humidity, "", "sensor_error", true);
+        log_access_event("env_error", "", "sensor_error", &sample);
         vTaskDelay(pdMS_TO_TICKS(PROJECT_ACCESS_DENIED_MS));
         display_ui_power_down();
         mqtt_app_start_once();
+        publish_env_event("env_error", &sample);
         return;
     }
 
@@ -197,8 +288,11 @@ static void handle_pir_wakeup(const char *wakeup)
         ESP_LOGE(TAG, "RFID init failed (%s)", esp_err_to_name(rfid_ret));
         display_ui_show_access_denied("NO_RFID", "RFID ERROR");
         storage_log_append(wakeup, "rfid_error", sample.temperature, sample.humidity, "", "rfid_error", true);
+        log_access_event("rfid_error", "", "rfid_error", &sample);
         vTaskDelay(pdMS_TO_TICKS(PROJECT_ACCESS_DENIED_MS));
         display_ui_power_down();
+        mqtt_app_start_once();
+        publish_access_event("rfid_error", "", "", "rfid_error", &sample);
         return;
     }
 
@@ -216,34 +310,60 @@ static void handle_pir_wakeup(const char *wakeup)
 
     bool has_card = strcmp(uid_str, "NO_CARD") != 0;
     bool authorized = has_card && access_control_is_authorized(uid.bytes, uid.len);
-    bool granted = authorized && !sample.blocked;
-    const char *result = granted ? "granted" : "denied";
+    bool can_open = authorized && !sample.blocked;
+    const char *event = "denied";
+    const char *result = can_open ? "granted" : "denied";
+    const char *direction = "";
     const char *reason = "CARTAO";
 
     if (!has_card) {
+        event = "timeout";
+        result = "timeout";
         reason = "TIMEOUT";
     } else if (sample.blocked) {
         reason = "ALERTA";
+    } else if (authorized) {
+        presence_action_t action = presence_toggle(uid_str, now_millis());
+        if (action == PRESENCE_ACTION_ENTERED) {
+            event = "entry";
+            direction = "entry";
+        } else if (action == PRESENCE_ACTION_EXITED) {
+            event = "exit";
+            direction = "exit";
+        } else {
+            event = "denied";
+            result = "full";
+            reason = "LOTADO";
+            can_open = false;
+        }
     }
 
-    if (granted) {
+    if (!has_card) {
+        display_ui_show_timeout();
+        vTaskDelay(pdMS_TO_TICKS(PROJECT_ACCESS_DENIED_MS));
+    } else if (can_open) {
+        door_led_open();
         display_ui_show_access_granted(uid_str);
         vTaskDelay(pdMS_TO_TICKS(PROJECT_ACCESS_OPEN_MS));
     } else {
+        door_led_denied();
         display_ui_show_access_denied(uid_str, reason);
         vTaskDelay(pdMS_TO_TICKS(PROJECT_ACCESS_DENIED_MS));
     }
+    door_led_off();
     display_ui_power_down();
 
     storage_log_append(wakeup,
-                       "rfid_auth",
+                       event,
                        sample.temperature,
                        sample.humidity,
                        has_card ? uid_str : "",
                        result,
                        sample.blocked);
+    log_access_event(event, has_card ? uid_str : "", result, &sample);
     mqtt_app_start_once();
-    publish_access_event(has_card ? uid_str : "", result, &sample);
+    publish_access_event(event, has_card ? uid_str : "", direction, result, &sample);
+    publish_presence_event();
 }
 
 void app_main(void)

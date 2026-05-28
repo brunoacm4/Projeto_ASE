@@ -1,0 +1,89 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "links": [],
+  "panels": [
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "green", "value": null},
+              {"color": "red", "value": 1}
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 5, "w": 6, "x": 0, "y": 0},
+      "id": 1,
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}},
+      "pluginVersion": "11.3.1",
+      "targets": [{"expr": "access_occupancy", "refId": "A"}],
+      "title": "Cards inside",
+      "type": "stat"
+    },
+    {
+      "datasource": "Prometheus",
+      "gridPos": {"h": 5, "w": 6, "x": 6, "y": 0},
+      "id": 5,
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}},
+      "targets": [{"expr": "access_messages_total", "refId": "A"}],
+      "title": "MQTT messages",
+      "type": "stat"
+    },
+    {
+      "datasource": "Prometheus",
+      "gridPos": {"h": 5, "w": 6, "x": 12, "y": 0},
+      "id": 2,
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}},
+      "targets": [{"expr": "access_blocked", "refId": "A"}],
+      "title": "Access blocked",
+      "type": "stat"
+    },
+    {
+      "datasource": "Prometheus",
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 5},
+      "id": 3,
+      "targets": [
+        {"expr": "access_temperature_c", "legendFormat": "Temperature C", "refId": "A"},
+        {"expr": "access_humidity_pct", "legendFormat": "Humidity %", "refId": "B"}
+      ],
+      "title": "Environment",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "Prometheus",
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 13},
+      "id": 4,
+      "targets": [
+        {"expr": "access_entries_total", "legendFormat": "Entries", "refId": "A"},
+        {"expr": "access_exits_total", "legendFormat": "Exits", "refId": "B"},
+        {"expr": "access_denied_total", "legendFormat": "Denied", "refId": "C"},
+        {"expr": "access_timeouts_total", "legendFormat": "Timeouts", "refId": "D"},
+        {"expr": "access_evacuations_total", "legendFormat": "Evacuated", "refId": "E"}
+      ],
+      "title": "Access counters",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "5s",
+  "schemaVersion": 40,
+  "tags": ["ase", "access-monitor"],
+  "templating": {"list": []},
+  "time": {"from": "now-30m", "to": "now"},
+  "timezone": "browser",
+  "title": "Access Monitor",
+  "uid": "access-monitor",
+  "version": 1,
+  "weekStart": ""
+}

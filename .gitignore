@@ -5,6 +5,31 @@
 **/managed_components/
 **/sdkconfig.old
 
+# Local IDE/editor state
+**/.vscode/
+**/.idea/
+**/*.swp
+**/*.swo
+**/*~
+
+# Local agent/tool scratch state
+**/.agents/
+**/.codex/
+
+# Python caches used by dashboard tooling
+**/__pycache__/
+**/*.py[cod]
+**/.pytest_cache/
+
+# Local secrets and runtime logs
+**/.env
+**/.env.*
+!**/.env.example
+**/*.log
+
+# Local OS/runtime noise
+**/.DS_Store
+
 # Lab guides: keep only extracted text files
 /ASE_pdfs/*
 !/ASE_pdfs/

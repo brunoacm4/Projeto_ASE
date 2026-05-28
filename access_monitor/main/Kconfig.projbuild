@@ -6,7 +6,7 @@ menu "Access Monitor Configuration"
 
     config PROJECT_BROKER_URL
         string "MQTT broker URL"
-        default "mqtts://broker.hivemq.com:8883"
+        default "mqtt://CONFIGURE_ME:1883"
         depends on PROJECT_ENABLE_MQTT
 
     config PROJECT_PIR_ACTIVE_HIGH

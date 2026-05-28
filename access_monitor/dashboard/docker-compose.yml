@@ -1,0 +1,50 @@
+services:
+  mosquitto:
+    image: eclipse-mosquitto:2
+    profiles:
+      - broker
+    ports:
+      - "${MOSQUITTO_HOST_PORT:-1883}:1883"
+    volumes:
+      - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+
+  bridge:
+    build: ./bridge
+    restart: unless-stopped
+    environment:
+      MQTT_HOST: ${MQTT_HOST:-host.docker.internal}
+      MQTT_PORT: ${MQTT_PORT:-1883}
+      METRICS_PORT: "9100"
+      DATA_DIR: /data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "9100:9100"
+    volumes:
+      - bridge_data:/data
+
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    depends_on:
+      - bridge
+
+  grafana:
+    image: grafana/grafana:11.3.1
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_DEFAULT_THEME: light
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - prometheus
+
+volumes:
+  bridge_data:

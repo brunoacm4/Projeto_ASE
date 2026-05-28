@@ -13,15 +13,22 @@ Projeto ESP-IDF para o Sistema de Controlo de Acesso e Monitorizacao Ambiental.
 ## Build
 
 ```sh
-source /home/bruno/esp/esp-idf/export.sh
-idf.py -B build_esp32c6 build
+source /home/tito/esp/esp-idf/export.sh
+idf.py build
+```
+
+Se o build antigo tiver sido configurado com outro ambiente Python do ESP-IDF, executa uma vez:
+
+```sh
+idf.py fullclean
+idf.py build
 ```
 
 ## Flash
 
 ```sh
-source /home/bruno/esp/esp-idf/export.sh
-idf.py -B build_esp32c6 -p /dev/ttyACM0 flash monitor
+source /home/tito/esp/esp-idf/export.sh
+idf.py -p /dev/ttyACM0 flash monitor
 ```
 
 Altera a porta se a board aparecer noutro dispositivo. A consola principal esta configurada para USB Serial/JTAG para libertar GPIO16 e GPIO17.
@@ -48,40 +55,169 @@ O IRQ do RFID fica livre nesta versao. SD, TFT e RFID partilham o mesmo barramen
 
 ## Logs
 
-O ficheiro CSV usado no cartao SD e:
+Os ficheiros CSV usados no cartao SD sao:
 
 ```text
 /sdcard/LOG.CSV
+/sdcard/ACCESS.CSV
+/sdcard/PRESENT.CSV
 ```
 
-Foi escolhido um nome curto porque a configuracao atual do FatFs nao usa nomes longos.
+Foram escolhidos nomes curtos porque a configuracao atual do FatFs nao usa nomes longos.
+
+- `LOG.CSV`: eventos gerais, ambiente e erros.
+- `ACCESS.CSV`: entrada, saida, negados, timeouts e evacuacoes.
+- `PRESENT.CSV`: snapshot dos cartoes atualmente dentro.
 
 ## Cartoes autorizados
 
 O UID `DEAF32F6` esta autorizado em `main/access_control.c`.
 
-## MQTT
+## Presenca e porta virtual
 
-O MQTT fica desligado por defeito para validar primeiro DHT20, SD, TFT, RFID e deep-sleep.
+O sistema usa um unico leitor RFID. Cada UID autorizado alterna o seu estado:
 
-Para ligar:
+- se nao estava dentro, o evento e `entry`;
+- se ja estava dentro, o evento e `exit`.
+
+O LED RGB onboard da ESP32-C6, ligado ao GPIO8, indica a porta virtual:
+
+- verde: entrada ou saida validada;
+- vermelho: acesso negado por cartao;
+- apagado: timeout ou repouso.
+
+Quando o PIR acorda o sistema e nenhum cartao e apresentado, o TFT mostra apenas `TIMEOUT`.
+
+Em alerta ambiental, o TFT mostra o aviso, todos os cartoes presentes sao evacuados e `PRESENT.CSV` e limpo. O LED nao acende a verde neste caso.
+
+## Periodicidade do TFT
+
+O sistema acorda por timer a cada 20 s para leitura ambiental. Quando o TFT acende para mostrar temperatura/humidade, a informacao fica visivel durante 5 s. Se existirem cartoes dentro, o ecrã de presenca tambem fica visivel durante 5 s.
+
+## MQTT e dashboard
+
+O `sdkconfig` atual tem MQTT ativo, mas as credenciais Wi-Fi ficam como `CONFIGURE_ME`. Configura a rede e o broker em `menuconfig` antes de testar MQTT.
+
+Para configurar:
 
 ```sh
-source /home/bruno/esp/esp-idf/export.sh
-idf.py -B build_esp32c6 menuconfig
+source /home/tito/esp/esp-idf/export.sh
+idf.py menuconfig
 ```
 
-Depois ativa `Access Monitor Configuration -> Enable MQTT publishing` e configura o broker em `MQTT broker URL`.
+Opcoes relevantes:
 
-Por defeito o projeto usa MQTT com TLS:
+- `Access Monitor Configuration -> Enable MQTT publishing`
+- `Access Monitor Configuration -> MQTT broker URL`
+- `Example Connection Configuration -> WiFi SSID`
+- `Example Connection Configuration -> WiFi Password`
+
+Para a dashboard local, arranca a stack no PC. Por defeito, a bridge liga-se ao broker MQTT que ja esta no host em `localhost:1883`:
+
+```sh
+cd dashboard
+docker compose down
+docker compose up --build
+```
+
+O `down` e importante depois de alteracoes na bridge, porque remove containers antigos que possam ter ficado em erro antes de o Mosquitto estar pronto.
+
+Se nao tiveres nenhum broker MQTT no host e quiseres arrancar tambem o Mosquitto Docker, usa:
+
+```sh
+cd dashboard
+MQTT_HOST=mosquitto docker compose --profile broker up --build
+```
+
+Nesse modo, a porta `1883` do host tem de estar livre. Se ja houver um Mosquitto local nessa porta, usa o modo default acima.
+
+Depois configura o broker do firmware para:
 
 ```text
-mqtts://broker.hivemq.com:8883
+mqtt://<IP_DO_PC>:1883
 ```
 
-Para HiveMQ publico, o firmware usa o certificate bundle do ESP-IDF para validar o certificado do broker. No MQTTX usa o mesmo host, porta `8883`, `SSL/TLS` ligado e seleciona `CA signed server certificate`.
+A dashboard fica em:
+
+```text
+Grafana:    http://localhost:3000  admin/admin
+Prometheus: http://localhost:9090
+Metrics:    http://localhost:9100/metrics
+MQTT:       localhost:1883
+```
+
+Topicos publicados:
+
+- `ase/access/events`
+- `ase/access/env`
+- `ase/access/alerts`
+- `ase/access/status`
+- `ase/access/presence`
 
 O certificado `main/mosquitto_org.crt` fica guardado no projeto apenas como referencia do Lab 9/Mosquitto.
+
+### Diagnostico MQTT / Prometheus / Grafana
+
+1. Confirma o IP do PC onde corre a dashboard:
+
+```sh
+hostname -I
+```
+
+2. No firmware, confirma em `menuconfig` que o broker esta assim:
+
+```text
+CONFIG_PROJECT_BROKER_URL=mqtt://<IP_DO_PC>:1883
+```
+
+3. Arranca a dashboard. Se ja tens MQTTX a ver mensagens em `localhost:1883`, usa o modo default:
+
+```sh
+cd dashboard
+docker compose down
+docker compose up --build
+```
+
+O servico `bridge` deve imprimir mensagens como `connecting to MQTT broker host.docker.internal:1883`, `connected`, `subscribed` e `message received`.
+
+Se preferires usar o Mosquitto dentro do Docker, garante primeiro que a porta `1883` esta livre e arranca com:
+
+```sh
+cd dashboard
+MQTT_HOST=mosquitto docker compose --profile broker up --build
+```
+
+4. Verifica se chegam mensagens MQTT:
+
+```sh
+mosquitto_sub -h localhost -t 'ase/access/#' -v
+```
+
+Tambem podes confirmar isto no MQTTX subscrevendo `ase/access/#`.
+
+5. Testa a dashboard sem a ESP, publicando uma mensagem manual:
+
+```sh
+mosquitto_pub -h localhost -t ase/access/events -m '{"event":"entry","card_id":"TESTE01","direction":"entry","result":"granted","occupancy":1,"temp":24.5,"hum":55.0,"blocked":0,"millis":1234}'
+```
+
+Se estiveres a usar o Mosquitto Docker com `--profile broker`, podes usar os mesmos comandos via `docker compose exec mosquitto ...`.
+
+6. Confirma que o bridge recebeu dados:
+
+```text
+http://localhost:9100/metrics
+```
+
+A metrica `access_messages_total` deve aumentar.
+
+7. Confirma no Prometheus:
+
+```text
+http://localhost:9090/targets
+```
+
+O target `access-monitor` deve estar `UP`.
 
 ## Nota de pinout
 

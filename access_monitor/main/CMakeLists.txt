@@ -3,9 +3,11 @@ idf_component_register(
         "main.c"
         "access_control.c"
         "display_ui.c"
+        "door_led.c"
         "mqtt_app.c"
         "multisensor_dht20.c"
         "pir.c"
+        "presence.c"
         "rfid.c"
         "spi_bus_manager.c"
         "storage_log.c"
@@ -14,6 +16,7 @@ idf_component_register(
         driver
         esp_driver_gpio
         esp_driver_i2c
+        esp_driver_rmt
         esp_driver_spi
         esp_timer
         esp_event

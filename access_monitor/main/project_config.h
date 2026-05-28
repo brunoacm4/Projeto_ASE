@@ -5,6 +5,8 @@
 
 #define PROJECT_MOUNT_POINT              "/sdcard"
 #define PROJECT_LOG_FILE_PATH            PROJECT_MOUNT_POINT "/LOG.CSV"
+#define PROJECT_ACCESS_LOG_FILE_PATH     PROJECT_MOUNT_POINT "/ACCESS.CSV"
+#define PROJECT_PRESENT_FILE_PATH        PROJECT_MOUNT_POINT "/PRESENT.CSV"
 
 /* Pinout from PROJETO/ASE_pdfs/ASE.drawio.png. */
 #define PROJECT_PIN_DHT20_SDA            GPIO_NUM_17
@@ -26,15 +28,18 @@
 #define PROJECT_PIN_RFID_RST             GPIO_NUM_3
 
 #define PROJECT_PIN_PIR_OUT              GPIO_NUM_4
+#define PROJECT_PIN_RGB_LED              GPIO_NUM_8
 
-#define PROJECT_ENV_WAKE_PERIOD_US       (60ULL * 1000000ULL)
+#define PROJECT_MAX_PRESENT_CARDS        8
+
+#define PROJECT_ENV_WAKE_PERIOD_US       (20ULL * 1000000ULL)
 #define PROJECT_RFID_WAIT_TIMEOUT_MS     15000
 #define PROJECT_RFID_POLL_MS             150
 
 #define PROJECT_TEMP_MAX_C               30.0f
 #define PROJECT_HUM_MAX_PCT              80.0f
 
-#define PROJECT_ENV_DISPLAY_MS           600
+#define PROJECT_ENV_DISPLAY_MS           5000
 #define PROJECT_ALERT_DISPLAY_MS         900
 #define PROJECT_ACCESS_OPEN_MS           1000
 #define PROJECT_ACCESS_DENIED_MS         1000

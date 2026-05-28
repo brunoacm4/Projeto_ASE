@@ -204,8 +204,14 @@ esp_err_t rfid_init(void)
     ESP_RETURN_ON_ERROR(mfrc522_antenna_on(), TAG, "antenna failed");
 
     uint8_t version = 0;
-    if (mfrc522_read_reg(MFRC522_REG_VERSION, &version) == ESP_OK) {
-        ESP_LOGI(TAG, "MFRC522 version 0x%02X", version);
+    ret = mfrc522_read_reg(MFRC522_REG_VERSION, &version);
+    if (ret != ESP_OK) {
+        return ret;
+    }
+    ESP_LOGI(TAG, "MFRC522 version 0x%02X", version);
+    if (version != 0x88 && version != 0x90 && version != 0x91 && version != 0x92) {
+        ESP_LOGE(TAG, "Invalid MFRC522 version 0x%02X", version);
+        return ESP_ERR_NOT_FOUND;
     }
 
     s_ready = true;
