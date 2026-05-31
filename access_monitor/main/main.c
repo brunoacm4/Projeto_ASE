@@ -216,6 +216,8 @@ static void enter_deep_sleep(void)
     ESP_ERROR_CHECK(esp_sleep_enable_timer_wakeup(PROJECT_ENV_WAKE_PERIOD_US));
     ESP_ERROR_CHECK(pir_configure_wakeup());
 
+    gpio_hold_en(PROJECT_PIN_TFT_BL);
+
     ESP_LOGI(TAG, "Entering deep-sleep");
     vTaskDelay(pdMS_TO_TICKS(100));
     esp_deep_sleep_start();
@@ -257,6 +259,22 @@ static void handle_timer_wakeup(const char *wakeup)
 
 static void handle_pir_wakeup(const char *wakeup)
 {
+    /* GPIO3 is shared by TFT RST and RFID RST. Pulse it LOW here to
+     * hardware-reset the MFRC522, which may be in a confused state from
+     * UART0 TX activity on GPIO16 (RFID CS) during the previous boot.
+     * display_ui_init() will reinitialise the TFT immediately after. */
+    gpio_set_direction(PROJECT_PIN_RFID_RST, GPIO_MODE_OUTPUT);
+    gpio_set_level(PROJECT_PIN_RFID_RST, 0);
+    vTaskDelay(pdMS_TO_TICKS(10));
+    gpio_set_level(PROJECT_PIN_RFID_RST, 1);
+
+    /* Silence UART0 TX so GPIO16 (RFID CS = UART TX) stays HIGH during the
+     * display/sensor init phase. Without this, every log byte drives GPIO16
+     * LOW and corrupts the MFRC522 state restored by the RST pulse above.
+     * rfid_init() reconfigures GPIO16 to SPI CS, after which UART TX is
+     * automatically disconnected from GPIO16. */
+    esp_log_level_set("*", ESP_LOG_NONE);
+
     if (display_ui_init() == ESP_OK) {
         display_ui_show_wait_rfid_pending();
     }
@@ -267,6 +285,7 @@ static void handle_pir_wakeup(const char *wakeup)
     storage_log_mount();
 
     if (!sample.valid) {
+        esp_log_level_set("*", ESP_LOG_INFO);
         display_ui_show_sensor_error();
         storage_log_append(wakeup, "env_error", sample.temperature, sample.humidity, "", "sensor_error", true);
         log_access_event("env_error", "", "sensor_error", &sample);
@@ -284,6 +303,7 @@ static void handle_pir_wakeup(const char *wakeup)
     }
 
     esp_err_t rfid_ret = rfid_init();
+    esp_log_level_set("*", ESP_LOG_INFO);
     if (rfid_ret != ESP_OK) {
         ESP_LOGE(TAG, "RFID init failed (%s)", esp_err_to_name(rfid_ret));
         display_ui_show_access_denied("NO_RFID", "RFID ERROR");
@@ -346,9 +366,8 @@ static void handle_pir_wakeup(const char *wakeup)
         display_ui_show_access_granted(uid_str);
         vTaskDelay(pdMS_TO_TICKS(PROJECT_ACCESS_OPEN_MS));
     } else {
-        door_led_denied();
         display_ui_show_access_denied(uid_str, reason);
-        vTaskDelay(pdMS_TO_TICKS(PROJECT_ACCESS_DENIED_MS));
+        door_led_denied();
     }
     door_led_off();
     display_ui_power_down();
@@ -368,6 +387,8 @@ static void handle_pir_wakeup(const char *wakeup)
 
 void app_main(void)
 {
+    gpio_hold_dis(PROJECT_PIN_TFT_BL);
+
     s_boot_count++;
     esp_sleep_wakeup_cause_t reason = esp_sleep_get_wakeup_cause();
     const char *wakeup = wake_reason_name(reason);

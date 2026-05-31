@@ -12,7 +12,7 @@
 static const char *TAG = "door_led";
 
 #define RMT_LED_RESOLUTION_HZ 10000000
-#define DOOR_LED_BRIGHTNESS   24
+#define DOOR_LED_BRIGHTNESS   150
 
 static rmt_channel_handle_t s_led_channel;
 static rmt_encoder_handle_t s_led_encoder;
@@ -134,7 +134,12 @@ void door_led_open(void)
 
 void door_led_denied(void)
 {
-    door_led_set_rgb(DOOR_LED_BRIGHTNESS, 0, 0);
+    for (int i = 0; i < 3; i++) {
+        door_led_set_rgb(0, DOOR_LED_BRIGHTNESS, 0);
+        vTaskDelay(pdMS_TO_TICKS(150));
+        door_led_off();
+        vTaskDelay(pdMS_TO_TICKS(150));
+    }
 }
 
 void door_led_off(void)

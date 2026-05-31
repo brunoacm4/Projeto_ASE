@@ -78,7 +78,7 @@ esp_err_t mqtt_app_start_once(void)
     return ESP_ERR_NOT_SUPPORTED;
 #else
     if (s_started) {
-        return mqtt_wait_connected(pdMS_TO_TICKS(5000));
+        return mqtt_wait_connected(pdMS_TO_TICKS(3000));
     }
 
     ESP_LOGI(TAG, "Starting MQTT network");
@@ -122,7 +122,7 @@ esp_err_t mqtt_app_start_once(void)
     ret = esp_mqtt_client_start(s_client);
     if (ret == ESP_OK) {
         s_started = true;
-        ret = mqtt_wait_connected(pdMS_TO_TICKS(8000));
+        ret = mqtt_wait_connected(pdMS_TO_TICKS(3000));
     }
     return ret;
 #endif

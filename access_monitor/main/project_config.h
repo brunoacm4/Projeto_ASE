@@ -39,7 +39,7 @@
 #define PROJECT_TEMP_MAX_C               30.0f
 #define PROJECT_HUM_MAX_PCT              80.0f
 
-#define PROJECT_ENV_DISPLAY_MS           5000
+#define PROJECT_ENV_DISPLAY_MS           1500
 #define PROJECT_ALERT_DISPLAY_MS         900
 #define PROJECT_ACCESS_OPEN_MS           1000
 #define PROJECT_ACCESS_DENIED_MS         1000

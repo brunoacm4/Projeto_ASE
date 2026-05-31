@@ -230,6 +230,7 @@ esp_err_t rfid_read_uid(rfid_uid_t *uid)
 
     esp_err_t ret = mfrc522_transceive(&reqa, 1, atqa, &atqa_len, 7);
     if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "REQA failed (%s) — card not detected", esp_err_to_name(ret));
         return ESP_ERR_NOT_FOUND;
     }
 
@@ -238,11 +239,15 @@ esp_err_t rfid_read_uid(rfid_uid_t *uid)
     size_t response_len = sizeof(response);
     ret = mfrc522_transceive(anticoll, sizeof(anticoll), response, &response_len, 0);
     if (ret != ESP_OK || response_len < 5) {
+        ESP_LOGW(TAG, "Anticollision failed (%s) len=%u — possible collision or unsupported card",
+                 esp_err_to_name(ret), (unsigned)response_len);
         return ESP_ERR_NOT_FOUND;
     }
 
     uint8_t bcc = response[0] ^ response[1] ^ response[2] ^ response[3];
     if (bcc != response[4]) {
+        ESP_LOGW(TAG, "BCC mismatch: bytes=%02X %02X %02X %02X bcc_rx=%02X bcc_calc=%02X",
+                 response[0], response[1], response[2], response[3], response[4], bcc);
         return ESP_ERR_INVALID_CRC;
     }
 
