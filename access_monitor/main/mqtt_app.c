@@ -25,7 +25,7 @@ static esp_mqtt_client_handle_t s_client;
 static bool s_started;
 static bool s_connected;
 
-#define MQTT_PUBLISH_DRAIN_MS 750
+#define MQTT_PUBLISH_DRAIN_MS 200
 
 static esp_err_t mqtt_wait_connected(TickType_t timeout_ticks)
 {
@@ -78,7 +78,7 @@ esp_err_t mqtt_app_start_once(void)
     return ESP_ERR_NOT_SUPPORTED;
 #else
     if (s_started) {
-        return mqtt_wait_connected(pdMS_TO_TICKS(3000));
+        return mqtt_wait_connected(pdMS_TO_TICKS(2000));
     }
 
     ESP_LOGI(TAG, "Starting MQTT network");
@@ -122,7 +122,7 @@ esp_err_t mqtt_app_start_once(void)
     ret = esp_mqtt_client_start(s_client);
     if (ret == ESP_OK) {
         s_started = true;
-        ret = mqtt_wait_connected(pdMS_TO_TICKS(3000));
+        ret = mqtt_wait_connected(pdMS_TO_TICKS(2000));
     }
     return ret;
 #endif
